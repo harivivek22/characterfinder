@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Character Name Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#f2ede4;
+    --bg:#1a1714;
+    --bg-raised:#231f1b;
+    --gold:#d4a843;
+    --gold-dim:#8c763d;
+    --muted:#a69c8c;
+    --rule:#3a342c;
+    --err:#c1554a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding:48px 20px 80px;
+  }
+  .wrap{max-width:760px;margin:0 auto;}
+
+  header{margin-bottom:40px;}
+  .eyebrow{
+    color:var(--gold-dim);
+    font-size:13px;
+    letter-spacing:.02em;
+    margin:0 0 10px;
+  }
+  h1{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:clamp(32px,5vw,48px);
+    line-height:1.08;
+    margin:0 0 14px;
+    color:var(--ink);
+  }
+  h1 em{
+    font-style:italic;
+    color:var(--gold);
+  }
+  .sub{
+    color:var(--muted);
+    font-size:15.5px;
+    line-height:1.55;
+    max-width:56ch;
+    margin:0;
+  }
+
+  .search-row{
+    display:flex;
+    gap:10px;
+    margin-top:32px;
+    border-bottom:2px solid var(--rule);
+    padding-bottom:4px;
+  }
+  input[type=text]{
+    flex:1;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:var(--ink);
+    font-family:'Fraunces',serif;
+    font-size:26px;
+    padding:10px 4px;
+  }
+  input[type=text]::placeholder{color:#564e40;}
+  button{
+    background:var(--gold);
+    color:#1a1714;
+    border:none;
+    border-radius:3px;
+    padding:0 22px;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:14.5px;
+    cursor:pointer;
+    transition:background .15s ease;
+  }
+  button:hover{background:#e3b953;}
+  button:disabled{background:var(--gold-dim);cursor:default;}
+
+  .controls{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:14px;
+    font-size:13px;
+    color:var(--muted);
+  }
+  select{
+    background:var(--bg-raised);
+    color:var(--ink);
+    border:1px solid var(--rule);
+    border-radius:3px;
+    padding:4px 8px;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+  }
+
+  .status{
+    margin-top:28px;
+    font-size:14px;
+    color:var(--muted);
+    min-height:20px;
+  }
+  .status.err{color:var(--err);}
+
+  .progress-track{
+    margin-top:10px;
+    height:3px;
+    background:var(--rule);
+    border-radius:2px;
+    overflow:hidden;
+    display:none;
+  }
+  .progress-fill{
+    height:100%;
+    width:0%;
+    background:var(--gold);
+    transition:width .2s ease;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:30px;
+    display:none;
+  }
+  thead th{
+    text-align:left;
+    font-size:12px;
+    font-weight:500;
+    color:var(--gold-dim);
+    border-bottom:1px solid var(--rule);
+    padding:0 10px 10px 0;
+  }
+  tbody td{
+    padding:14px 10px 14px 0;
+    border-bottom:1px solid var(--rule);
+    font-size:14.5px;
+    vertical-align:top;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  .movie-cell{font-family:'Fraunces',serif;font-size:17px;}
+  .year{color:var(--muted);font-size:14px;}
+  .char-cell{color:var(--ink);}
+  .actor-cell{color:var(--muted);}
+  .count-line{
+    margin-top:30px;
+    font-size:13px;
+    color:var(--muted);
+    display:none;
+  }
+
+  footer{
+    margin-top:60px;
+    padding-top:20px;
+    border-top:1px solid var(--rule);
+    font-size:12.5px;
+    color:#564e40;
+    line-height:1.6;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Character Name Finder — Telugu Cinema</p>
+    <h1>Where has your name<br><em>played a part?</em></h1>
+    <p class="sub">Type your name and find if any character is named after in a telugu movie</p>
+  </header>
+
+  <div class="search-row">
+    <input type="text" id="nameInput" placeholder="e.g. Michael" autocomplete="off">
+    <button id="searchBtn">Find roles</button>
+  </div>
+  <div class="controls">
+    <label for="scanCount">Films to check:</label>
+    <select id="scanCount">
+      <option value="100">100 (fast)</option>
+      <option value="200" selected>200</option>
+      <option value="400">400 (slower, wider)</option>
+    </select>
+  </div>
+
+  <div class="status" id="status"></div>
+  <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+
+  <table id="resultsTable">
+    <thead>
+      <tr><th>Movie</th><th>Character</th><th>Played by</th></tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+  <div class="count-line" id="countLine"></div>
+
+  <footer>
+    Data from <a href="https://www.themoviedb.org" style="color:var(--gold-dim)">TMDb</a>, searched across the current most-popular Telugu-language titles — not the full catalogue. This product uses the TMDb API but is not endorsed or certified by TMDb.
+  </footer>
+</div>
+
+<script>
+const API_KEY = "9a37907f4424c7b22e1163b661107eac";
+const BASE = "https://api.themoviedb.org/3";
+
+const nameInput = document.getElementById('nameInput');
+const searchBtn = document.getElementById('searchBtn');
+const scanCount = document.getElementById('scanCount');
+const statusEl = document.getElementById('status');
+const progressTrack = document.getElementById('progressTrack');
+const progressFill = document.getElementById('progressFill');
+const table = document.getElementById('resultsTable');
+const tbody = document.getElementById('resultsBody');
+const countLine = document.getElementById('countLine');
+
+function setStatus(msg, isErr){
+  statusEl.textContent = msg;
+  statusEl.className = 'status' + (isErr ? ' err' : '');
+}
+
+function cleanToken(s){
+  return s.replace(/[^A-Za-z''-]/g,'').toLowerCase();
+}
+
+async function fetchPopularMovies(total){
+  const pages = Math.ceil(total / 20);
+  const requests = [];
+  for(let p=1; p<=pages; p++){
+    requests.push(fetch(`${BASE}/discover/movie?api_key=${API_KEY}&language=en-US&with_original_language=te&sort_by=popularity.desc&page=${p}`).then(r=>r.json()));
+  }
+  const results = await Promise.all(requests);
+  let movies = [];
+  for(const r of results){
+    if(r && r.status_code){
+      throw new Error(`TMDb error ${r.status_code}: ${r.status_message}`);
+    }
+    if(r && r.results) movies = movies.concat(r.results);
+  }
+  return movies.slice(0, total);
+}
+
+async function fetchCreditsBatch(movies, onProgress){
+  const CONCURRENCY = 12;
+  let i = 0;
+  let done = 0;
+  const out = [];
+
+  async function worker(){
+    while(i < movies.length){
+      const idx = i++;
+      const m = movies[idx];
+      try{
+        const res = await fetch(`${BASE}/movie/${m.id}/credits?api_key=${API_KEY}`);
+        const data = await res.json();
+        out.push({ movie: m, credits: data });
+      }catch(e){
+        // skip failed ones silently
+      }
+      done++;
+      onProgress(done, movies.length);
+    }
+  }
+
+  const workers = [];
+  for(let w=0; w<CONCURRENCY; w++) workers.push(worker());
+  await Promise.all(workers);
+  return out;
+}
+
+async function runSearch(){
+  const rawName = nameInput.value.trim();
+  if(!rawName){
+    setStatus('Type a first name to search.', true);
+    return;
+  }
+  const target = cleanToken(rawName);
+  const totalToScan = parseInt(scanCount.value, 10);
+
+  searchBtn.disabled = true;
+  table.style.display = 'none';
+  countLine.style.display = 'none';
+  tbody.innerHTML = '';
+  progressTrack.style.display = 'block';
+  progressFill.style.width = '0%';
+  setStatus('Fetching popular films…');
+
+  let movies;
+  try{
+    movies = await fetchPopularMovies(totalToScan);
+  }catch(e){
+    setStatus('Could not reach TMDb — ' + (e && e.message ? e.message : e) + ' (open your browser console, F12, for details)', true);
+    searchBtn.disabled = false;
+    progressTrack.style.display = 'none';
+    return;
+  }
+  if(movies.length === 0){
+    setStatus('TMDb returned no results — this usually means the API key was rejected. Open this link in a new tab to check: ' + `${BASE}/discover/movie?api_key=${API_KEY}&with_original_language=te`, true);
+    searchBtn.disabled = false;
+    progressTrack.style.display = 'none';
+    return;
+  }
+
+  setStatus(`Scanning cast lists of ${movies.length} films…`);
+
+  const batches = await fetchCreditsBatch(movies, (done, total) => {
+    const pct = Math.round((done/total)*100);
+    progressFill.style.width = pct + '%';
+    setStatus(`Scanning cast lists of ${total} films… (${done}/${total})`);
+  });
+
+  const matches = [];
+  for(const { movie, credits } of batches){
+    if(!credits || !credits.cast) continue;
+    for(const member of credits.cast){
+      if(!member.character) continue;
+      const firstToken = member.character.trim().split(/\s+/)[0];
+      if(cleanToken(firstToken) === target && target.length > 0){
+        matches.push({
+          movie: movie.title,
+          year: (movie.release_date || '').slice(0,4) || '—',
+          character: member.character,
+          actor: member.name,
+          popularity: movie.popularity || 0
+        });
+      }
+    }
+  }
+
+  matches.sort((a,b) => b.popularity - a.popularity);
+
+  progressTrack.style.display = 'none';
+
+  if(matches.length === 0){
+    setStatus(`No characters named "${rawName}" found in the ${movies.length} films checked. Try a wider scan or a different name.`);
+    searchBtn.disabled = false;
+    return;
+  }
+
+  setStatus('');
+  for(const m of matches){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="movie-cell">${escapeHtml(m.movie)} <span class="year">(${m.year})</span></td>
+      <td class="char-cell">${escapeHtml(m.character)}</td>
+      <td class="actor-cell">${escapeHtml(m.actor)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  table.style.display = '';
+  countLine.style.display = '';
+  countLine.textContent = `${matches.length} matching character${matches.length===1?'':'s'} found across ${movies.length} films.`;
+  searchBtn.disabled = false;
+}
+
+function escapeHtml(str){
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+searchBtn.addEventListener('click', runSearch);
+nameInput.addEventListener('keydown', e => { if(e.key === 'Enter') runSearch(); });
+</script>
+</body>
+</html>
