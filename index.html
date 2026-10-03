@@ -180,6 +180,8 @@
     <p class="sub">Type your name and find if any character is named after in a telugu movie</p>
   </header>
 
+  <div class="status" id="connStatus" style="margin-bottom:10px;">Checking connection to TMDb…</div>
+
   <div class="search-row">
     <input type="text" id="nameInput" placeholder="e.g. Michael" autocomplete="off">
     <button id="searchBtn">Find roles</button>
@@ -396,6 +398,28 @@ function escapeHtml(str){
 
 searchBtn.addEventListener('click', runSearch);
 nameInput.addEventListener('keydown', e => { if(e.key === 'Enter') runSearch(); });
+
+// Self-test on load: confirms the browser can actually reach TMDb before
+// the person even tries a search, so a blank result can't be mistaken for a bug.
+(async function connectivityCheck(){
+  const el = document.getElementById('connStatus');
+  try{
+    const r = await fetch(`${BASE}/discover/movie?api_key=${API_KEY}&with_original_language=te&page=1`);
+    const data = await r.json();
+    if(data && data.status_code){
+      el.textContent = `TMDb rejected the request: ${data.status_message} (status ${data.status_code}). Check the API key.`;
+      el.classList.add('err');
+    } else if(data && data.results){
+      el.textContent = `Connected — TMDb has ${data.total_results ?? '?'} Telugu-language titles indexed.`;
+    } else {
+      el.textContent = 'Connected to TMDb, but got an unexpected response shape.';
+      el.classList.add('err');
+    }
+  }catch(e){
+    el.textContent = 'Cannot reach TMDb from this page (' + (e && e.message ? e.message : e) + '). If you are viewing this inside any kind of in-app preview, open the downloaded file directly in a real browser tab instead.';
+    el.classList.add('err');
+  }
+})();
 </script>
 </body>
 </html>
