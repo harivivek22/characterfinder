@@ -184,15 +184,6 @@
     <input type="text" id="nameInput" placeholder="e.g. Michael" autocomplete="off">
     <button id="searchBtn">Find roles</button>
   </div>
-  <div class="controls">
-    <label for="scanCount">Films to check:</label>
-    <select id="scanCount">
-      <option value="100">100 (fast)</option>
-      <option value="200" selected>200</option>
-      <option value="400">400 (slower, wider)</option>
-    </select>
-  </div>
-
   <div class="status" id="status"></div>
   <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
 
@@ -205,7 +196,7 @@
   <div class="count-line" id="countLine"></div>
 
   <footer>
-    Data from <a href="https://www.themoviedb.org" style="color:var(--gold-dim)">TMDb</a>, searched across the current most-popular Telugu-language titles — not the full catalogue. This product uses the TMDb API but is not endorsed or certified by TMDb.
+    Data from <a href="https://www.themoviedb.org" style="color:var(--gold-dim)">TMDb</a>, searched across every Telugu-language title in their database. A full scan can take a while. This product uses the TMDb API but is not endorsed or certified by TMDb.
   </footer>
 </div>
 
@@ -215,7 +206,6 @@ const BASE = "https://api.themoviedb.org/3";
 
 const nameInput = document.getElementById('nameInput');
 const searchBtn = document.getElementById('searchBtn');
-const scanCount = document.getElementById('scanCount');
 const statusEl = document.getElementById('status');
 const progressTrack = document.getElementById('progressTrack');
 const progressFill = document.getElementById('progressFill');
@@ -232,25 +222,48 @@ function cleanToken(s){
   return s.replace(/[^A-Za-z''-]/g,'').toLowerCase();
 }
 
-async function fetchPopularMovies(total){
-  const pages = Math.ceil(total / 20);
-  const requests = [];
-  for(let p=1; p<=pages; p++){
-    requests.push(fetch(`${BASE}/discover/movie?api_key=${API_KEY}&language=en-US&with_original_language=te&sort_by=popularity.desc&page=${p}`).then(r=>r.json()));
+async function discoverPage(page){
+  const r = await fetch(`${BASE}/discover/movie?api_key=${API_KEY}&language=en-US&with_original_language=te&sort_by=popularity.desc&page=${page}`).then(r=>r.json());
+  if(r && r.status_code){
+    throw new Error(`TMDb error ${r.status_code}: ${r.status_message}`);
   }
-  const results = await Promise.all(requests);
-  let movies = [];
-  for(const r of results){
-    if(r && r.status_code){
-      throw new Error(`TMDb error ${r.status_code}: ${r.status_message}`);
+  return r;
+}
+
+async function fetchAllTeluguMovies(onProgress){
+  // First page tells us how many pages exist in total.
+  const first = await discoverPage(1);
+  let movies = first.results || [];
+  // TMDb discover caps out at 500 pages regardless of total_pages reported.
+  const totalPages = Math.min(first.total_pages || 1, 500);
+  onProgress(1, totalPages);
+
+  const CONCURRENCY = 10;
+  let nextPage = 2;
+  let pagesDone = 1;
+
+  async function worker(){
+    while(nextPage <= totalPages){
+      const page = nextPage++;
+      try{
+        const data = await discoverPage(page);
+        if(data && data.results) movies = movies.concat(data.results);
+      }catch(e){
+        // skip a failed page rather than aborting the whole scan
+      }
+      pagesDone++;
+      onProgress(pagesDone, totalPages);
     }
-    if(r && r.results) movies = movies.concat(r.results);
   }
-  return movies.slice(0, total);
+
+  const workers = [];
+  for(let w=0; w<CONCURRENCY; w++) workers.push(worker());
+  await Promise.all(workers);
+  return movies;
 }
 
 async function fetchCreditsBatch(movies, onProgress){
-  const CONCURRENCY = 12;
+  const CONCURRENCY = 20;
   let i = 0;
   let done = 0;
   const out = [];
@@ -284,7 +297,6 @@ async function runSearch(){
     return;
   }
   const target = cleanToken(rawName);
-  const totalToScan = parseInt(scanCount.value, 10);
 
   searchBtn.disabled = true;
   table.style.display = 'none';
@@ -292,11 +304,15 @@ async function runSearch(){
   tbody.innerHTML = '';
   progressTrack.style.display = 'block';
   progressFill.style.width = '0%';
-  setStatus('Fetching popular films…');
+  setStatus('Fetching the full list of Telugu films from TMDb…');
 
   let movies;
   try{
-    movies = await fetchPopularMovies(totalToScan);
+    movies = await fetchAllTeluguMovies((done, total) => {
+      const pct = Math.round((done/total)*50); // first half of the bar
+      progressFill.style.width = pct + '%';
+      setStatus(`Fetching the full list of Telugu films… (page ${done}/${total})`);
+    });
   }catch(e){
     setStatus('Could not reach TMDb — ' + (e && e.message ? e.message : e) + ' (open your browser console, F12, for details)', true);
     searchBtn.disabled = false;
@@ -313,18 +329,22 @@ async function runSearch(){
   setStatus(`Scanning cast lists of ${movies.length} films…`);
 
   const batches = await fetchCreditsBatch(movies, (done, total) => {
-    const pct = Math.round((done/total)*100);
+    const pct = 50 + Math.round((done/total)*50); // second half of the bar
     progressFill.style.width = pct + '%';
     setStatus(`Scanning cast lists of ${total} films… (${done}/${total})`);
   });
 
   const matches = [];
+  let totalCast = 0;
   for(const { movie, credits } of batches){
     if(!credits || !credits.cast) continue;
     for(const member of credits.cast){
+      totalCast++;
       if(!member.character) continue;
-      const firstToken = member.character.trim().split(/\s+/)[0];
-      if(cleanToken(firstToken) === target && target.length > 0){
+      // split on whitespace AND punctuation like / , ( ) so "Priya's sister",
+      // "ACP Priya Reddy", "Priya / Herself" etc. all expose "Priya" as a token
+      const tokens = member.character.split(/[\s/,()&-]+/).map(cleanToken).filter(Boolean);
+      if(target.length > 0 && tokens.includes(target)){
         matches.push({
           movie: movie.title,
           year: (movie.release_date || '').slice(0,4) || '—',
@@ -341,7 +361,7 @@ async function runSearch(){
   progressTrack.style.display = 'none';
 
   if(matches.length === 0){
-    setStatus(`No characters named "${rawName}" found in the ${movies.length} films checked. Try a wider scan or a different name.`);
+    setStatus(`No characters named "${rawName}" found across ${totalCast} cast entries in the ${movies.length} films checked. Try a wider scan or a different name.`);
     searchBtn.disabled = false;
     return;
   }
