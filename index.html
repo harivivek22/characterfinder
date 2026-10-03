@@ -262,11 +262,14 @@ async function fetchAllTeluguMovies(onProgress){
   return movies;
 }
 
-async function fetchCreditsBatch(movies, onProgress){
+// Scans credits and calls onMatch(row) the instant a match is found,
+// so the table fills in live instead of waiting for the whole scan to finish.
+async function scanCreditsStreaming(movies, target, onProgress, onMatch){
   const CONCURRENCY = 20;
   let i = 0;
   let done = 0;
-  const out = [];
+  let totalCast = 0;
+  let failedFetches = 0;
 
   async function worker(){
     while(i < movies.length){
@@ -275,19 +278,34 @@ async function fetchCreditsBatch(movies, onProgress){
       try{
         const res = await fetch(`${BASE}/movie/${m.id}/credits?api_key=${API_KEY}`);
         const data = await res.json();
-        out.push({ movie: m, credits: data });
+        if(data && data.cast){
+          for(const member of data.cast){
+            totalCast++;
+            if(!member.character) continue;
+            const tokens = member.character.split(/[\s/,()&-]+/).map(cleanToken).filter(Boolean);
+            if(target.length > 0 && tokens.includes(target)){
+              onMatch({
+                movie: m.title,
+                year: (m.release_date || '').slice(0,4) || '—',
+                character: member.character,
+                actor: member.name,
+                popularity: m.popularity || 0
+              });
+            }
+          }
+        }
       }catch(e){
-        // skip failed ones silently
+        failedFetches++;
       }
       done++;
-      onProgress(done, movies.length);
+      onProgress(done, movies.length, totalCast, failedFetches);
     }
   }
 
   const workers = [];
   for(let w=0; w<CONCURRENCY; w++) workers.push(worker());
   await Promise.all(workers);
-  return out;
+  return { totalCast, failedFetches };
 }
 
 async function runSearch(){
@@ -327,47 +345,12 @@ async function runSearch(){
   }
 
   setStatus(`Scanning cast lists of ${movies.length} films…`);
+  table.style.display = '';
+  countLine.style.display = '';
+  let matchCount = 0;
 
-  const batches = await fetchCreditsBatch(movies, (done, total) => {
-    const pct = 50 + Math.round((done/total)*50); // second half of the bar
-    progressFill.style.width = pct + '%';
-    setStatus(`Scanning cast lists of ${total} films… (${done}/${total})`);
-  });
-
-  const matches = [];
-  let totalCast = 0;
-  for(const { movie, credits } of batches){
-    if(!credits || !credits.cast) continue;
-    for(const member of credits.cast){
-      totalCast++;
-      if(!member.character) continue;
-      // split on whitespace AND punctuation like / , ( ) so "Priya's sister",
-      // "ACP Priya Reddy", "Priya / Herself" etc. all expose "Priya" as a token
-      const tokens = member.character.split(/[\s/,()&-]+/).map(cleanToken).filter(Boolean);
-      if(target.length > 0 && tokens.includes(target)){
-        matches.push({
-          movie: movie.title,
-          year: (movie.release_date || '').slice(0,4) || '—',
-          character: member.character,
-          actor: member.name,
-          popularity: movie.popularity || 0
-        });
-      }
-    }
-  }
-
-  matches.sort((a,b) => b.popularity - a.popularity);
-
-  progressTrack.style.display = 'none';
-
-  if(matches.length === 0){
-    setStatus(`No characters named "${rawName}" found across ${totalCast} cast entries in the ${movies.length} films checked. Try a wider scan or a different name.`);
-    searchBtn.disabled = false;
-    return;
-  }
-
-  setStatus('');
-  for(const m of matches){
+  function addRow(m){
+    matchCount++;
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="movie-cell">${escapeHtml(m.movie)} <span class="year">(${m.year})</span></td>
@@ -375,11 +358,34 @@ async function runSearch(){
       <td class="actor-cell">${escapeHtml(m.actor)}</td>
     `;
     tbody.appendChild(tr);
+    countLine.textContent = `${matchCount} matching character${matchCount===1?'':'s'} found so far…`;
   }
-  table.style.display = '';
-  countLine.style.display = '';
-  countLine.textContent = `${matches.length} matching character${matches.length===1?'':'s'} found across ${movies.length} films.`;
+
+  const { totalCast, failedFetches } = await scanCreditsStreaming(
+    movies,
+    target,
+    (done, total, castSoFar) => {
+      const pct = 50 + Math.round((done/total)*50); // second half of the bar
+      progressFill.style.width = pct + '%';
+      setStatus(`Scanning cast lists… (${done}/${total} films, ${castSoFar} roles checked)`);
+    },
+    addRow
+  );
+
+  progressTrack.style.display = 'none';
   searchBtn.disabled = false;
+
+  if(matchCount === 0){
+    table.style.display = 'none';
+    countLine.style.display = 'none';
+    let msg = `No characters named "${rawName}" found across ${totalCast} cast entries in ${movies.length} films.`;
+    if(failedFetches > 0) msg += ` (${failedFetches} films couldn't be checked — likely a flaky connection.)`;
+    setStatus(msg);
+    return;
+  }
+
+  setStatus('');
+  countLine.textContent = `${matchCount} matching character${matchCount===1?'':'s'} found across ${movies.length} films checked.`;
 }
 
 function escapeHtml(str){
